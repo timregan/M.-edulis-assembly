@@ -1,0 +1,22 @@
+#!/bin/sh
+# Run LongQC to perform sample quality control, specifying PacBio Sequel platform, and output directory 'QC'
+python ./LongQC/longQC.py sampleqc -x pb-sequel -o QC All_data_PacBio.fastq.gz
+
+# Assemble PacBio data using wtdbg2 with specified parameters and output to 'AllPAcDataContigs'
+../wtdbg2/wtdbg2 All_data_PacBio_Raw.fastq.gz -i L 1000 -p 21 -k 0 -AS 2 -s 0.05 -fo AllPAcDataContigs -t 15 -v
+
+# Align PacBio contigs to the reference using minimap2, sort the resulting SAM file, and output to 'aligned.bam'
+minimap2 -t 15 -ax map-pb AllPacContigs.fa All_Data_PacBio.fasta.gz --secondary=no | samtools sort -m 1G -o aligned.bam -T tmp.ali
+
+# Run purge_haplotigs to identify and remove haplotigs from the PacBio contigs based on alignment and coverage
+purge_haplotigs hist -b aligned.bam -g AllPacContigs.fa -t 15
+purge_haplotigs cov -i aligned.bam -l 50 -m 80 -h 100 -o coverage_stats.csv -j 80 -s 80
+purge_haplotigs purge -g AllPacDataContigs.fa -c coverage_stats.csv
+
+# Hi-Rise scaffolding (proprietary assembler, no code provided)
+
+# Perform iterative polishing using minimap2 and Racon, correcting errors in the assembly
+../data/minimap2-2.17_x64-linux/minimap2 -t 70 -ax map-pb FinalDove.fa allPacGq.part_N_fastq.gz > AllPacPDTN.sam
+
+python3 ./racon/scripts/racon_wrapper.py -t 75 --split 10000000000 allPacDT.fastq.gz ../data/AllPacDT.sam ../data/FinalDoveRacPolN.fa > AlltoRacCorNCorrected.fa 2> >(tee -a RaconAlltoN.log >&2)
+
